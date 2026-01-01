@@ -10917,5 +10917,5 @@ Starlight:Notification({
 	Duration = 10,
 	Icon = 105789146907268,
 })
-
+print("Blurred GUIs:", #Camera["Starlight Blur Elements"]:GetChildren())
 return Starlight
