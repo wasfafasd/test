@@ -2326,7 +2326,6 @@ function Starlight:Notification(data)
 			task.wait(data.Duration)
 
 			if not Starlight.NotificationsOpen then
-				newNotification.Icon.Visible = false
 
 				TweenService:Create(
 					newNotification,
@@ -10885,5 +10884,7 @@ Starlight:Notification({
 	Duration = 10,
 	Icon = 105789146907268,
 })
-print("Blurred GUIs:", #Camera["Starlight Blur Elements"]:GetChildren())
+
 return Starlight
+
+print("Blurred GUIs:", #Camera["Starlight Blur Elements"]:GetChildren())
