@@ -1147,16 +1147,15 @@ end
 --[=[
 -- Creates the BlurBehind Effect for the transparent theme
 local function BlurModule(Frame : Frame)
-	local universalDof;
+	local universalDof
 	for i,v in pairs(Lighting:GetChildren()) do
-
 		if v:IsA("DepthOfFieldEffect")
 			and not string.find(v.Name, "starlightBlur_", nil) then
 
 			universalDof = v
 		end
-
 	end
+
 	if universalDof == nil then
 		universalDof = Instance.new("DepthOfFieldEffect")
 		universalDof.FarIntensity = 0
@@ -1164,6 +1163,7 @@ local function BlurModule(Frame : Frame)
 		universalDof.FocusDistance = 500
 		universalDof.InFocusRadius = 500
 		universalDof.Enabled = true
+		universalDof.Parent = Lighting
 	end
 
 	local partRoot = Camera:FindFirstChild("Starlight Blur Elements") or Instance.new("Folder", Camera)
@@ -1178,10 +1178,10 @@ local function BlurModule(Frame : Frame)
 	local blurObject          = universalDof:Clone()
 	blurObject.NearIntensity  = Frame:GetAttribute("BlurIntensity")
 	blurObject.FocusDistance  = universalDof.FocusDistance
-	blurObject.InFocusRadius = universalDof.InFocusRadius
-	blurObject.FarIntensity = universalDof.FarIntensity
+	blurObject.InFocusRadius  = universalDof.InFocusRadius
+	blurObject.FarIntensity   = universalDof.FarIntensity
 	blurObject.Parent         = Lighting
-	blurObject.Name = "starlightBlur_" .. Frame.Name .. HttpService:GenerateGUID(false)
+	blurObject.Name           = "starlightBlur_" .. Frame.Name .. HttpService:GenerateGUID(false)
 
 	universalDof:GetPropertyChangedSignal("FarIntensity"):Connect(function()
 		blurObject.FarIntensity = universalDof.FarIntensity
@@ -1208,6 +1208,7 @@ local function BlurModule(Frame : Frame)
 	local BlursList         = {}
 	local BlurObjects       = {}
 	local BlurredGui        = {}
+	local GlobalBlurLoopSet = false
 
 	BlurredGui.__index      = BlurredGui
 
@@ -1232,16 +1233,34 @@ local function BlurModule(Frame : Frame)
 		end
 	end
 
+	function BlurredGui.updateAll()
+		local camCF = Camera.CFrame
+		for i = 1, #PartsList do
+			PartsList[i].CFrame = camCF
+		end
+	end
+
+	local function ensureGlobalBlurLoop()
+		if GlobalBlurLoopSet then
+			return
+		end
+		GlobalBlurLoopSet = true
+
+		RunService:BindToRenderStep("StarlightBlurGlobalUpdate", Enum.RenderPriority.Camera.Value + 1, function()
+			BlurredGui.updateAll()
+		end)
+	end
+
 	function BlurredGui.new(frame, shape)
 		local blurPart        = Instance.new("Part")
-		blurPart.Size         = Vector3.new(1, 1, 1) * 0.01
+		blurPart.Size         = Vector3.new(1, 1, 1) * partSize
 		blurPart.Anchored     = true
 		blurPart.CanCollide   = false
 		blurPart.CanTouch     = false
 		blurPart.Material     = Enum.Material.Glass
 		blurPart.Transparency = partTransparency
 		blurPart.Parent       = partRoot
-		blurPart.Color = Color3.new(1,1,1)
+		blurPart.Color        = Color3.new(1,1,1)
 
 		local mesh
 		if (shape == "Rectangle") then
@@ -1276,70 +1295,19 @@ local function BlurModule(Frame : Frame)
 
 		BlurObjects[new] = blurPart
 		rebuildPartsList()
+		ensureGlobalBlurLoop()
 
-		game:GetService("RunService"):BindToRenderStep("...", Enum.RenderPriority.Camera.Value + 1, function()
-			blurPart.CFrame = Camera.CFrame
-			BlurredGui.updateAll()
-		end)
 		return new
 	end
 
-	local function updateGui(blurObj)
-		if (not blurObj.Frame.Visible) then
-			blurObj.Part.Transparency = 1
-			return
-		end
-
-		local frame  = blurObj.Frame
-		local part   = blurObj.Part
-		local mesh   = blurObj.Mesh
-
-		part.Transparency = partTransparency
-
-		local corner0 = frame.AbsolutePosition + blurSize
-		local corner1 = corner0 + frame.AbsoluteSize - blurSize*2
-		local ray0, ray1
-		ray0 = Camera:ScreenPointToRay(corner0.X, corner0.Y, 1)
-		ray1 = Camera:ScreenPointToRay(corner1.X, corner1.Y, 1)
-
-		local planeOrigin = Camera.CFrame.Position + Camera.CFrame.LookVector * (0.05 - Camera.NearPlaneZ)
-		local planeNormal = Camera.CFrame.LookVector
-		local pos0 = rayPlaneIntersect(planeOrigin, planeNormal, ray0.Origin, ray0.Direction)
-		local pos1 = rayPlaneIntersect(planeOrigin, planeNormal, ray1.Origin, ray1.Direction)
-
-		local pos0 = Camera.CFrame:PointToObjectSpace(pos0)
-		local pos1 = Camera.CFrame:PointToObjectSpace(pos1)
-
-		local size   = pos1 - pos0
-		local center = (pos0 + pos1)/2
-
-		mesh.Offset = center
-		mesh.Scale  = size / partSize
-	end
-
-	function BlurredGui.updateAll()
-		blurObject.NearIntensity = tonumber(Frame:GetAttribute("BlurIntensity"))
-
-		for i = 1, #BlursList do
-			updateGui(BlursList[i])
-		end
-
-		local cframes = table.create(#BlursList, workspace.CurrentCamera.CFrame)
-		workspace:BulkMoveTo(PartsList, cframes, Enum.BulkMoveMode.FireCFrameChanged)
-
-		--blurObject.FocusDistance = 0.25 - Camera.NearPlaneZ
-	end
-
-	function BlurredGui:Destroy()
-		self.Part:Destroy()
-		BlurObjects[self] = nil
-		rebuildPartsList()
-	end
-
-	BlurredGui.new(Frame, "Rectangle")
-
-	BlurredGui.updateAll()
-	return BlurredGui
+	return {
+		BlurredGui = BlurredGui,
+		BlurObjects = BlurObjects,
+		PartsList = PartsList,
+		BlursList = BlursList,
+		BlurObject = blurObject,
+		UniversalDof = universalDof
+	}
 end
 ]=]
 
