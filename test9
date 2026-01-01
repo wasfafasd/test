@@ -10886,5 +10886,5 @@ Starlight:Notification({
 })
 
 return Starlight
-
+task.wait(5)
 print("Blurred GUIs:", #Camera["Starlight Blur Elements"]:GetChildren())
