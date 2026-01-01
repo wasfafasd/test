@@ -7272,12 +7272,12 @@ function Starlight:CreateWindow(WindowSettings)
 								NestedElement.Instances[2].Buttons.Visible = false
 
 								Tween(NestedElement.Instances[2], { Size = UDim2.fromOffset(0, 0) }, function()
-									if NestedElement and NestedElement.Instances ~= nil then
-										NestedElement.Instances[2].Visible = false
-										if acrylicFlag then
-											AcrylicObject.Model.Transparency = 1
-										end
-									end
+								    if NestedElement and NestedElement.Instances ~= nil then
+								        NestedElement.Instances[2].Visible = false
+								        if acrylicFlag and AcrylicObject and AcrylicObject.Model then
+								            AcrylicObject.Model.Transparency = 1
+								        end
+								    end
 								end, Tween.Info(nil, nil, 0.24))
 
 								NestedElement.Instances[2].Container.Color.OldColor.Frame.BackgroundColor3 =
