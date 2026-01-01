@@ -8243,7 +8243,7 @@ function Starlight:CreateWindow(WindowSettings)
 									function()
 										if NestedElement and NestedElement.Instances ~= nil then
 											NestedElement.Instances[2].Visible = false
-											if acrylicFlag then
+											if acrylicFlag and AcrylicObject and AcrylicObject.Model then
 												AcrylicObject.Model.Transparency = 1
 											end
 										end
