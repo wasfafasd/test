@@ -1147,15 +1147,16 @@ end
 --[=[
 -- Creates the BlurBehind Effect for the transparent theme
 local function BlurModule(Frame : Frame)
-	local universalDof
+	local universalDof;
 	for i,v in pairs(Lighting:GetChildren()) do
+
 		if v:IsA("DepthOfFieldEffect")
 			and not string.find(v.Name, "starlightBlur_", nil) then
 
 			universalDof = v
 		end
-	end
 
+	end
 	if universalDof == nil then
 		universalDof = Instance.new("DepthOfFieldEffect")
 		universalDof.FarIntensity = 0
@@ -1163,7 +1164,6 @@ local function BlurModule(Frame : Frame)
 		universalDof.FocusDistance = 500
 		universalDof.InFocusRadius = 500
 		universalDof.Enabled = true
-		universalDof.Parent = Lighting
 	end
 
 	local partRoot = Camera:FindFirstChild("Starlight Blur Elements") or Instance.new("Folder", Camera)
@@ -1178,10 +1178,10 @@ local function BlurModule(Frame : Frame)
 	local blurObject          = universalDof:Clone()
 	blurObject.NearIntensity  = Frame:GetAttribute("BlurIntensity")
 	blurObject.FocusDistance  = universalDof.FocusDistance
-	blurObject.InFocusRadius  = universalDof.InFocusRadius
-	blurObject.FarIntensity   = universalDof.FarIntensity
+	blurObject.InFocusRadius = universalDof.InFocusRadius
+	blurObject.FarIntensity = universalDof.FarIntensity
 	blurObject.Parent         = Lighting
-	blurObject.Name           = "starlightBlur_" .. Frame.Name .. HttpService:GenerateGUID(false)
+	blurObject.Name = "starlightBlur_" .. Frame.Name .. HttpService:GenerateGUID(false)
 
 	universalDof:GetPropertyChangedSignal("FarIntensity"):Connect(function()
 		blurObject.FarIntensity = universalDof.FarIntensity
@@ -1208,7 +1208,6 @@ local function BlurModule(Frame : Frame)
 	local BlursList         = {}
 	local BlurObjects       = {}
 	local BlurredGui        = {}
-	local GlobalBlurLoopSet = false
 
 	BlurredGui.__index      = BlurredGui
 
@@ -1233,34 +1232,16 @@ local function BlurModule(Frame : Frame)
 		end
 	end
 
-	function BlurredGui.updateAll()
-		local camCF = Camera.CFrame
-		for i = 1, #PartsList do
-			PartsList[i].CFrame = camCF
-		end
-	end
-
-	local function ensureGlobalBlurLoop()
-		if GlobalBlurLoopSet then
-			return
-		end
-		GlobalBlurLoopSet = true
-
-		RunService:BindToRenderStep("StarlightBlurGlobalUpdate", Enum.RenderPriority.Camera.Value + 1, function()
-			BlurredGui.updateAll()
-		end)
-	end
-
 	function BlurredGui.new(frame, shape)
 		local blurPart        = Instance.new("Part")
-		blurPart.Size         = Vector3.new(1, 1, 1) * partSize
+		blurPart.Size         = Vector3.new(1, 1, 1) * 0.01
 		blurPart.Anchored     = true
 		blurPart.CanCollide   = false
 		blurPart.CanTouch     = false
 		blurPart.Material     = Enum.Material.Glass
 		blurPart.Transparency = partTransparency
 		blurPart.Parent       = partRoot
-		blurPart.Color        = Color3.new(1,1,1)
+		blurPart.Color = Color3.new(1,1,1)
 
 		local mesh
 		if (shape == "Rectangle") then
@@ -1295,19 +1276,70 @@ local function BlurModule(Frame : Frame)
 
 		BlurObjects[new] = blurPart
 		rebuildPartsList()
-		ensureGlobalBlurLoop()
 
+		game:GetService("RunService"):BindToRenderStep("...", Enum.RenderPriority.Camera.Value + 1, function()
+			blurPart.CFrame = Camera.CFrame
+			BlurredGui.updateAll()
+		end)
 		return new
 	end
 
-	return {
-		BlurredGui = BlurredGui,
-		BlurObjects = BlurObjects,
-		PartsList = PartsList,
-		BlursList = BlursList,
-		BlurObject = blurObject,
-		UniversalDof = universalDof
-	}
+	local function updateGui(blurObj)
+		if (not blurObj.Frame.Visible) then
+			blurObj.Part.Transparency = 1
+			return
+		end
+
+		local frame  = blurObj.Frame
+		local part   = blurObj.Part
+		local mesh   = blurObj.Mesh
+
+		part.Transparency = partTransparency
+
+		local corner0 = frame.AbsolutePosition + blurSize
+		local corner1 = corner0 + frame.AbsoluteSize - blurSize*2
+		local ray0, ray1
+		ray0 = Camera:ScreenPointToRay(corner0.X, corner0.Y, 1)
+		ray1 = Camera:ScreenPointToRay(corner1.X, corner1.Y, 1)
+
+		local planeOrigin = Camera.CFrame.Position + Camera.CFrame.LookVector * (0.05 - Camera.NearPlaneZ)
+		local planeNormal = Camera.CFrame.LookVector
+		local pos0 = rayPlaneIntersect(planeOrigin, planeNormal, ray0.Origin, ray0.Direction)
+		local pos1 = rayPlaneIntersect(planeOrigin, planeNormal, ray1.Origin, ray1.Direction)
+
+		local pos0 = Camera.CFrame:PointToObjectSpace(pos0)
+		local pos1 = Camera.CFrame:PointToObjectSpace(pos1)
+
+		local size   = pos1 - pos0
+		local center = (pos0 + pos1)/2
+
+		mesh.Offset = center
+		mesh.Scale  = size / partSize
+	end
+
+	function BlurredGui.updateAll()
+		blurObject.NearIntensity = tonumber(Frame:GetAttribute("BlurIntensity"))
+
+		for i = 1, #BlursList do
+			updateGui(BlursList[i])
+		end
+
+		local cframes = table.create(#BlursList, workspace.CurrentCamera.CFrame)
+		workspace:BulkMoveTo(PartsList, cframes, Enum.BulkMoveMode.FireCFrameChanged)
+
+		--blurObject.FocusDistance = 0.25 - Camera.NearPlaneZ
+	end
+
+	function BlurredGui:Destroy()
+		self.Part:Destroy()
+		BlurObjects[self] = nil
+		rebuildPartsList()
+	end
+
+	BlurredGui.new(Frame, "Rectangle")
+
+	BlurredGui.updateAll()
+	return BlurredGui
 end
 ]=]
 
@@ -1733,11 +1765,13 @@ local function Unmaximize(Window: Frame, Dragging: boolean?)
 	Starlight.Maximized = false
 end
 
+-- GLOBAL tooltip state (one loop for all tooltips)
 local ActiveTooltip = nil
 local HoverStartTime = 0
 local HoverOrigin = nil
 local HoverThreshold = 0.44
 
+-- Create the global RenderStepped loop ONCE
 RunService.RenderStepped:Connect(function(dt)
 	if not ActiveTooltip then
 		return
@@ -1745,6 +1779,7 @@ RunService.RenderStepped:Connect(function(dt)
 
 	local mousePos = Vector2.new(Mouse.X, Mouse.Y)
 
+	-- Mouse moved → reset timer + hide tooltip
 	if (mousePos - HoverOrigin).Magnitude > 0 then
 		ActiveTooltip.Frame.Visible = false
 		HoverStartTime = 0
@@ -2184,67 +2219,97 @@ StarlightUI.Destroying:Connect(function()
 	end
 end)
 
-local ActiveNotifications = {}
-local NotificationUpdateLoopStarted = false
-
-local function StartNotificationUpdateLoop()
-	if NotificationUpdateLoopStarted then
-		return
-	end
-	NotificationUpdateLoopStarted = true
-
-	RunService.RenderStepped:Connect(function()
-		local now = tick()
-		for _, notif in ipairs(ActiveNotifications) do
-			local elapsed = now - notif.CreationTime
-			local label = notif.TimeLabel
-
-			if elapsed <= 4 then
-				label.Text = "now"
-			elseif elapsed < 60 then
-				label.Text = math.floor(elapsed) .. "s ago"
-			elseif elapsed < 3600 then
-				label.Text = math.floor(elapsed / 60) .. "m ago"
-			else
-				label.Text = math.floor(elapsed / 3600) .. "h ago"
-			end
-		end
-	end)
-end
-
 function Starlight:Notification(data)
+	--[[
+	NotificationSettings = {
+		Title = string,
+		Content = string,
+		Icon = number, **
+		Duration = number, **
+	}
+	]]
+
+	--[[if not correctBuild and not warned then
+		warned = true
+		warn('Starlight | Build Mismatch')
+		warn('Starlight may run into issues as it seems you are running an incompatible interface version ('.. (StarlightUI.Resources:FindFirstChild("Build") and StarlightUI.Resources:FindFirstChild("Build").Value or 'No Build') ..'). of Starlight\n\nThis version of Starlight is intended for interface build '..Starlight.InterfaceBuild..'.\nTry rerunning the script. If the issue persists, join our discord for support.')
+		pcall(function()
+			Starlight:Notification({
+				Title = "Starlight - Build Mistmatch",
+				Content = 'Starlight may run into issues as it seems you are running an incompatible interface version ('.. (StarlightUI.Resources:FindFirstChild("Build") and StarlightUI.Resources:FindFirstChild("Build").Value or 'No Build') ..'). of Starlight\n\nThis version of Starlight is intended for interface build '..Starlight.InterfaceBuild..'. \nTry rerunning the script. If the issue persists, join our discord for support.',
+				Icon = 129398364168201
+			})
+		end)
+	end]]
+
 	task.spawn(function()
 		local creationTime = tick()
 
+		-- Notification Object Creation
 		local newNotification = Resources.Elements.NotificationTemplate:Clone()
 		newNotification.Name = data.Title
 		newNotification.Parent = StarlightUI.Notifications
 		newNotification.LayoutOrder = #StarlightUI.Notifications:GetChildren()
 		newNotification.Visible = false
+		local AcrylicObject = Acrylic.AcrylicPaint()
+		pcall(function()
+			AcrylicObject.AddParent(newNotification)
+			AcrylicObject.Frame.Parent = newNotification
+		end)
 
-		if newNotification:FindFirstChild("Acrylic") then
-			newNotification.Acrylic:Destroy()
+		local function setDuration(elapsed)
+			if elapsed <= 4 then
+				newNotification.Time.Text = "now"
+			elseif elapsed < 60 then
+				newNotification.Time.Text = math.floor(elapsed) .. "s ago"
+			elseif elapsed < 3600 then
+				newNotification.Time.Text = math.floor(elapsed / 60) .. "m ago"
+			else
+				newNotification.Time.Text = math.floor(elapsed / 3600) .. "h ago"
+			end
 		end
 
+		task.spawn(function() end)
+		table.insert(
+			connections,
+			RunService.RenderStepped:Connect(function()
+				pcall(setDuration, tick() - creationTime)
+			end)
+		)
+
+		notificationAcrylicEvent.Event:Connect(function()
+			if newNotification.BackgroundTransparency == 1 then
+				return
+			end
+			TweenService:Create(
+				newNotification,
+				TweenInfo.new(0.4, Enum.EasingStyle.Exponential),
+				{ BackgroundTransparency = notificationAcrylic and (mainAcrylic and 0.55 or 0.375) or 0 }
+			):Play()
+		end)
+
+		-- Set Data
 		newNotification.Title.Text = data.Title
 		newNotification.Description.Text = data.Content
 		newNotification.Icon.Image = "rbxassetid://" .. (data.Icon or "")
 
+		-- Set initial transparency values
 		Hide(newNotification, false, false, false)
 
 		task.wait()
 
-		newNotification.Size = UDim2.new(1, 0, 0, -StarlightUI.Notifications.UIListLayout.Padding.Offset)
+		-- Calculate textbounds and set initial values
+		newNotification.Size =
+			UDim2.new(1, 0, 0, -StarlightUI.Notifications:FindFirstChild("UIListLayout").Padding.Offset)
+
 		newNotification.Visible = true
 
 		newNotification.Description.Size = UDim2.new(1, -65, 0, math.huge)
 		local bounds = newNotification.Description.TextBounds.Y
 		newNotification.Description.Size = UDim2.new(1, -65, 0, bounds + 2)
-
-		newNotification.Size = UDim2.new(1, 0, 0, -StarlightUI.Notifications.UIListLayout.Padding.Offset)
-
+		newNotification.Size =
+			UDim2.new(1, 0, 0, -StarlightUI.Notifications:FindFirstChild("UIListLayout").Padding.Offset)
 		task.wait()
-
 		TweenService:Create(
 			newNotification,
 			TweenInfo.new(0.6, Enum.EasingStyle.Exponential),
@@ -2252,141 +2317,171 @@ function Starlight:Notification(data)
 		):Play()
 
 		task.wait(0.15)
-
-		TweenService:Create(
-			newNotification,
-			TweenInfo.new(0.4, Enum.EasingStyle.Exponential),
-			{ BackgroundTransparency = 0 }
-		):Play()
-
-		TweenService:Create(
-			newNotification.UIStroke,
-			TweenInfo.new(0.4, Enum.EasingStyle.Exponential),
-			{ Transparency = 0.95 }
-		):Play()
-
-		for _, shadow in ipairs(newNotification.Shadow:GetChildren()) do
+		pcall(function()
 			TweenService:Create(
-				shadow,
+				newNotification,
 				TweenInfo.new(0.4, Enum.EasingStyle.Exponential),
-				{ ImageTransparency = 0.7 }
+				{ BackgroundTransparency = notificationAcrylic and (mainAcrylic and 0.55 or 0.375) or 0 }
 			):Play()
-		end
+			pcall(function()
+				TweenService:Create(
+					newNotification.Acrylic.shadow,
+					TweenInfo.new(0.4, Enum.EasingStyle.Exponential),
+					{ ImageTransparency = 0.7 }
+				):Play()
+				TweenService:Create(
+					newNotification.Acrylic.tint,
+					TweenInfo.new(0.4, Enum.EasingStyle.Exponential),
+					{ ImageTransparency = 0.98 }
+				):Play()
+				TweenService:Create(
+					newNotification.Acrylic.Noise,
+					TweenInfo.new(0.4, Enum.EasingStyle.Exponential),
+					{ ImageTransparency = 0.9 }
+				):Play()
+			end)
+			TweenService:Create(
+				newNotification.Shadow.antumbraShadow,
+				TweenInfo.new(0.4, Enum.EasingStyle.Exponential),
+				{ ImageTransparency = 0.94 }
+			):Play()
+			TweenService:Create(
+				newNotification.Shadow.penumbraShadow,
+				TweenInfo.new(0.4, Enum.EasingStyle.Exponential),
+				{ ImageTransparency = 0.55 }
+			):Play()
+			TweenService:Create(
+				newNotification.Shadow.umbraShadow,
+				TweenInfo.new(0.4, Enum.EasingStyle.Exponential),
+				{ ImageTransparency = 0.4 }
+			):Play()
+			TweenService
+				:Create(
+					newNotification.Title,
+					TweenInfo.new(0.3, Enum.EasingStyle.Exponential),
+					{ TextTransparency = 0 }
+				)
+				:Play()
 
-		TweenService:Create(
-			newNotification.Title,
-			TweenInfo.new(0.3, Enum.EasingStyle.Exponential),
-			{ TextTransparency = 0 }
-		):Play()
+			task.wait(0.05)
 
-		task.wait(0.05)
+			TweenService
+				:Create(
+					newNotification.Icon,
+					TweenInfo.new(0.3, Enum.EasingStyle.Exponential),
+					{ ImageTransparency = 0 }
+				)
+				:Play()
 
-		TweenService:Create(
-			newNotification.Icon,
-			TweenInfo.new(0.3, Enum.EasingStyle.Exponential),
-			{ ImageTransparency = 0 }
-		):Play()
+			task.wait(0.05)
+			TweenService:Create(
+				newNotification.Description,
+				TweenInfo.new(0.3, Enum.EasingStyle.Exponential),
+				{ TextTransparency = 0.35 }
+			):Play()
+			TweenService
+				:Create(
+					newNotification.Time,
+					TweenInfo.new(0.3, Enum.EasingStyle.Exponential),
+					{ TextTransparency = 0.35 }
+				)
+				:Play()
+			TweenService
+				:Create(
+					newNotification.UIStroke,
+					TweenInfo.new(0.4, Enum.EasingStyle.Exponential),
+					{ Transparency = 0.95 }
+				)
+				:Play()
 
-		task.wait(0.05)
+			-- Theme Binding
+			do
+				ThemeMethods.bindTheme(newNotification, "BackgroundColor3", "Backgrounds.Medium")
+				ThemeMethods.bindTheme(newNotification.UIStroke, "Color", "Foregrounds.Dark")
+				for _, shadow in pairs(newNotification.Shadow:GetChildren()) do
+					ThemeMethods.bindTheme(shadow, "ImageColor3", "Miscellaneous.LighterShadow")
+				end
+				ThemeMethods.bindTheme(newNotification.Icon, "ImageColor3", "Foregrounds.Light")
+				ThemeMethods.bindTheme(newNotification.Description, "TextColor3", "Foregrounds.Light")
+				ThemeMethods.bindTheme(newNotification.Title, "TextColor3", "Foregrounds.Light")
+				ThemeMethods.bindTheme(newNotification.Time, "TextColor3", "Foregrounds.Light")
+			end
+		end)
 
-		TweenService:Create(
-			newNotification.Description,
-			TweenInfo.new(0.3, Enum.EasingStyle.Exponential),
-			{ TextTransparency = 0.35 }
-		):Play()
-
-		TweenService:Create(
-			newNotification.Time,
-			TweenInfo.new(0.3, Enum.EasingStyle.Exponential),
-			{ TextTransparency = 0.35 }
-		):Play()
-
-		ThemeMethods.bindTheme(newNotification, "BackgroundColor3", "Backgrounds.Medium")
-		ThemeMethods.bindTheme(newNotification.UIStroke, "Color", "Foregrounds.Dark")
-		for _, shadow in ipairs(newNotification.Shadow:GetChildren()) do
-			ThemeMethods.bindTheme(shadow, "ImageColor3", "Miscellaneous.LighterShadow")
-		end
-		ThemeMethods.bindTheme(newNotification.Icon, "ImageColor3", "Foregrounds.Light")
-		ThemeMethods.bindTheme(newNotification.Description, "TextColor3", "Foregrounds.Light")
-		ThemeMethods.bindTheme(newNotification.Title, "TextColor3", "Foregrounds.Light")
-		ThemeMethods.bindTheme(newNotification.Time, "TextColor3", "Foregrounds.Light")
-
-		table.insert(ActiveNotifications, {
-			Frame = newNotification,
-			TimeLabel = newNotification.Time,
-			CreationTime = creationTime
-		})
-
-		StartNotificationUpdateLoop()
-
-		data.Duration =
-			data.Duration or math.min(math.max((#newNotification.Description.Text * 0.1) + 2.5, 3), 10)
-
+		data.Duration = data.Duration or math.min(math.max((#newNotification.Description.Text * 0.1) + 2.5, 3), 10)
 		if data.Duration >= 0 then
 			task.wait(data.Duration)
 
-			if not Starlight.NotificationsOpen then
-				newNotification.Icon.Visible = false
-
-				TweenService:Create(
-					newNotification,
-					TweenInfo.new(0.4, Enum.EasingStyle.Exponential),
-					{ BackgroundTransparency = 1 }
-				):Play()
-
-				TweenService:Create(
-					newNotification.UIStroke,
-					TweenInfo.new(0.4, Enum.EasingStyle.Exponential),
-					{ Transparency = 1 }
-				):Play()
-
-				for _, shadow in ipairs(newNotification.Shadow:GetChildren()) do
+			pcall(function()
+				if not Starlight.NotificationsOpen then
+					newNotification.Icon.Visible = false
 					TweenService:Create(
-						shadow,
+						newNotification,
+						TweenInfo.new(0.4, Enum.EasingStyle.Exponential),
+						{ BackgroundTransparency = 1 }
+					):Play()
+					TweenService:Create(
+						newNotification.UIStroke,
+						TweenInfo.new(0.4, Enum.EasingStyle.Exponential),
+						{ Transparency = 1 }
+					):Play()
+					TweenService:Create(
+						newNotification.Shadow.antumbraShadow,
 						TweenInfo.new(0.4, Enum.EasingStyle.Exponential),
 						{ ImageTransparency = 1 }
 					):Play()
+					TweenService:Create(
+						newNotification.Shadow.penumbraShadow,
+						TweenInfo.new(0.4, Enum.EasingStyle.Exponential),
+						{ ImageTransparency = 1 }
+					):Play()
+					TweenService:Create(
+						newNotification.Shadow.umbraShadow,
+						TweenInfo.new(0.4, Enum.EasingStyle.Exponential),
+						{ ImageTransparency = 1 }
+					):Play()
+					TweenService:Create(
+						newNotification.Title,
+						TweenInfo.new(0.3, Enum.EasingStyle.Exponential),
+						{ TextTransparency = 1 }
+					):Play()
+					TweenService:Create(
+						newNotification.Description,
+						TweenInfo.new(0.3, Enum.EasingStyle.Exponential),
+						{ TextTransparency = 1 }
+					):Play()
+					TweenService:Create(
+						newNotification.Time,
+						TweenInfo.new(0.3, Enum.EasingStyle.Exponential),
+						{ TextTransparency = 1 }
+					):Play()
+
+					TweenService:Create(
+						newNotification,
+						TweenInfo.new(1, Enum.EasingStyle.Exponential),
+						{ Size = UDim2.new(1, -90, 0, 0) }
+					):Play()
+
+					Tween(
+						newNotification,
+						{
+							Size = UDim2.new(
+								1,
+								-90,
+								0,
+								-StarlightUI.Notifications:FindFirstChild("UIListLayout").Padding.Offset
+							),
+						},
+						function()
+							newNotification.Visible = false
+						end,
+						TweenInfo.new(1, Enum.EasingStyle.Exponential)
+					)
 				end
 
-				TweenService:Create(
-					newNotification.Title,
-					TweenInfo.new(0.3, Enum.EasingStyle.Exponential),
-					{ TextTransparency = 1 }
-				):Play()
-
-				TweenService:Create(
-					newNotification.Description,
-					TweenInfo.new(0.3, Enum.EasingStyle.Exponential),
-					{ TextTransparency = 1 }
-				):Play()
-
-				TweenService:Create(
-					newNotification.Time,
-					TweenInfo.new(0.3, Enum.EasingStyle.Exponential),
-					{ TextTransparency = 1 }
-				):Play()
-
-				TweenService:Create(
-					newNotification,
-					TweenInfo.new(1, Enum.EasingStyle.Exponential),
-					{ Size = UDim2.new(1, -90, 0, 0) }
-				):Play()
-
-				task.delay(1, function()
-					newNotification.Visible = false
-				end)
-			end
-
-			for i, notif in ipairs(ActiveNotifications) do
-				if notif.Frame == newNotification then
-					table.remove(ActiveNotifications, i)
-					break
-				end
-			end
-
-			CollectionService:AddTag(newNotification, "__starlight_ExpiredNotification")
+				CollectionService:AddTag(newNotification, "__starlight_ExpiredNotification")
+			end)
 		end
-
 		return newNotification
 	end)
 end
