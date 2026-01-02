@@ -3544,6 +3544,7 @@ function Starlight:CreateWindow(WindowSettings)
 					end
 				end
 
+				--[[
 				Tab.Instances.Page.Holder.Right.Friends.Frame.total.Text = '<font size="14" color="#FFF" weight="semibold">Total</font>\n'
 					.. tostring(friendsInTotal)
 					.. " friends"
@@ -3556,6 +3557,7 @@ function Starlight:CreateWindow(WindowSettings)
 				Tab.Instances.Page.Holder.Right.Friends.Frame.inserver.Text = '<font size="14" color="#FFF" weight="semibold">In Server</font>\n'
 					.. tostring(friendsInGame)
 					.. " friends"
+				--]]
 			else
 				friendsCooldown -= 1
 			end
